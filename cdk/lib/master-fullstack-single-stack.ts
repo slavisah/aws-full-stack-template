@@ -4,7 +4,7 @@ import s3 = require('@aws-cdk/aws-s3');
 import lambda = require('@aws-cdk/aws-lambda');
 import iam = require('@aws-cdk/aws-iam');
 import { RemovalPolicy } from '@aws-cdk/core';
-import { Table } from '@aws-cdk/aws-dynamodb';
+var path = require('path');
 
 export class MasterFullStackSingleStack extends cdk.Stack {
   /*DynamoDb*/
@@ -49,7 +49,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(120),
       role: dynamoDbRole,
       environment: { TABLE_NAME: goalsTable.tableName },
-      code: lambda.Code.fromAsset("functions/ListGoals.js"),
+      code: lambda.Code.fromAsset(path.dirname("../functions/ListGoals.js")),
     });
 
     const functionCreateGoals = new lambda.Function(this, 'FunctionCreateGoal', {
@@ -61,7 +61,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(120),
       role: dynamoDbRole,
       environment: { TABLE_NAME: goalsTable.tableName },
-      code: lambda.Code.fromAsset("functions/CreateGoal.js"),
+      code: lambda.Code.fromAsset(path.dirname("../functions/CreateGoal.js")),
     });
 
     const functionDeleteGoal = new lambda.Function(this, 'FunctionDeleteGoal', {
@@ -73,7 +73,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(120),
       role: dynamoDbRole,
       environment: { TABLE_NAME: goalsTable.tableName },
-      code: lambda.Code.fromAsset("functions/DeleteGoal.js"),
+      code: lambda.Code.fromAsset(path.dirname("../functions/DeleteGoal.js")),
     });
 
     const functionUpdateGoal = new lambda.Function(this, 'FunctionUpdateGoal', {
@@ -85,7 +85,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(120),
       role: dynamoDbRole,
       environment: { TABLE_NAME: goalsTable.tableName },
-      code: lambda.Code.fromAsset("functions/UpdateGoal.js"),
+      code: lambda.Code.fromAsset(path.dirname("../functions/UpdateGoal.js")),
     });
 
     const functionGetGoal = new lambda.Function(this, 'FunctionGetGoal', {
@@ -97,7 +97,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(120),
       role: dynamoDbRole,
       environment: { TABLE_NAME: goalsTable.tableName },
-      code: lambda.Code.fromAsset("functions/GetGoal.js"),
+      code: lambda.Code.fromAsset(path.dirname("../functions/GetGoal.js")),
     });
 
     goalsTable.grantReadWriteData(functionListGoals);

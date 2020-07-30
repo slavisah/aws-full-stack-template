@@ -2,7 +2,7 @@
   "name": "cdk",
   "version": "0.1.0",
   "bin": {
-    "cdk": "/bin/master-full-stack-single.js"
+    "cdk": "/bin/master-full-stack-single.ts"
   },
   "scripts": {
     "build": "tsc",
