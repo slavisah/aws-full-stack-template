@@ -36,15 +36,11 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     });
     dynamoDbRole.addToPolicy(goalsPolicy);
 
-    const lambdaBucket = new s3.Bucket(this, 'AssetsBucket', {
-      bucketName: 'aws-fullstack-template-us-west-2',
-    });
-
     const functionListGoals = new lambda.Function(this, 'FunctionListGoals', {
       functionName: `${this.ProjectName}-ListGoals`,
       runtime: lambda.Runtime.NODEJS_12_X,
       description: 'Get list of goals for userId',
-      handler: 'index.handler',
+      handler: 'ListGoals.handler',
       memorySize: 256,
       timeout: cdk.Duration.seconds(120),
       role: dynamoDbRole,
@@ -56,7 +52,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       functionName: `${this.ProjectName}-CreateGoal`,
       runtime: lambda.Runtime.NODEJS_12_X,
       description: 'Create goal for user id',
-      handler: 'index.handler',
+      handler: 'CreateGoal.handler',
       memorySize: 256,
       timeout: cdk.Duration.seconds(120),
       role: dynamoDbRole,
@@ -68,7 +64,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       functionName: `${this.ProjectName}-DeleteGoal`,
       runtime: lambda.Runtime.NODEJS_12_X,
       description: 'Delete goal for user id',
-      handler: 'index.handler',
+      handler: 'DeleteGoal.handler',
       memorySize: 256,
       timeout: cdk.Duration.seconds(120),
       role: dynamoDbRole,
@@ -80,7 +76,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       functionName: `${this.ProjectName}-UpdateGoal`,
       runtime: lambda.Runtime.NODEJS_12_X,
       description: 'Update goal for user id',
-      handler: 'index.handler',
+      handler: 'UpdateGoal.handler',
       memorySize: 256,
       timeout: cdk.Duration.seconds(120),
       role: dynamoDbRole,
@@ -92,7 +88,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       functionName: `${this.ProjectName}-GetGoal`,
       runtime: lambda.Runtime.NODEJS_12_X,
       description: 'Get goal for user id',
-      handler: 'index.handler',
+      handler: 'GetGoal.handler',
       memorySize: 256,
       timeout: cdk.Duration.seconds(120),
       role: dynamoDbRole,
