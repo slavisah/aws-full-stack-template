@@ -38,11 +38,6 @@ export class MasterFullStackSingleStack extends cdk.Stack {
 
     const lambdaBucket = new s3.Bucket(this, 'AssetsBucket', {
       bucketName: 'aws-fullstack-template-us-west-2',
-      // accessControl: s3.BucketAccessControl.PRIVATE,
-      // metrics: [{
-      //   id: "EntireBucket"
-      // }],
-      // websiteIndexDocument: "index.html"
     });
 
     const functionListGoals = new lambda.Function(this, 'FunctionListGoals', {
@@ -53,8 +48,8 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       memorySize: 256,
       timeout: cdk.Duration.seconds(120),
       role: dynamoDbRole,
-      environment: { "tableName" : goalsTable.tableName},
-      code: lambda.S3Code.fromBucket(lambdaBucket, "functions/ListGoals.zip"),
+      environment: { tableName: goalsTable.tableName },
+      code: lambda.S3Code.fromBucket(lambdaBucket, 'functions/ListGoals.zip'),
     });
 
     const functionCreateGoals = new lambda.Function(this, 'FunctionCreateGoal', {
@@ -65,8 +60,8 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       memorySize: 256,
       timeout: cdk.Duration.seconds(120),
       role: dynamoDbRole,
-      environment: { "tableName" : goalsTable.tableName},
-      code: lambda.S3Code.fromBucket(lambdaBucket, "functions/CreateGoal.zip"),
+      environment: { tableName: goalsTable.tableName },
+      code: lambda.S3Code.fromBucket(lambdaBucket, 'functions/CreateGoal.zip'),
     });
 
     const functionDeleteGoal = new lambda.Function(this, 'FunctionDeleteGoal', {
@@ -77,8 +72,8 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       memorySize: 256,
       timeout: cdk.Duration.seconds(120),
       role: dynamoDbRole,
-      environment: { "tableName" : goalsTable.tableName},
-      code: lambda.S3Code.fromBucket(lambdaBucket, "functions/DeleteGoal.zip"),
+      environment: { tableName: goalsTable.tableName },
+      code: lambda.S3Code.fromBucket(lambdaBucket, 'functions/DeleteGoal.zip'),
     });
 
     const functionUpdateGoal = new lambda.Function(this, 'FunctionUpdateGoal', {
@@ -89,8 +84,26 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       memorySize: 256,
       timeout: cdk.Duration.seconds(120),
       role: dynamoDbRole,
-      environment: { "tableName" : goalsTable.tableName},
-      code: lambda.S3Code.fromBucket(lambdaBucket, "functions/UpdateGoal.zip"),
+      environment: { tableName: goalsTable.tableName },
+      code: lambda.S3Code.fromBucket(lambdaBucket, 'functions/UpdateGoal.zip'),
     });
+
+    const functionGetGoal = new lambda.Function(this, 'FunctionGetGoal', {
+      functionName: `${this.ProjectName}-GetGoal`,
+      runtime: lambda.Runtime.NODEJS_12_X,
+      description: 'Get goal for user id',
+      handler: 'index.handler',
+      memorySize: 256,
+      timeout: cdk.Duration.seconds(120),
+      role: dynamoDbRole,
+      environment: { tableName: goalsTable.tableName },
+      code: lambda.S3Code.fromBucket(lambdaBucket, 'functions/GetGoal.zip'),
+    });
+
+    goalsTable.grantReadWriteData(functionListGoals);
+    goalsTable.grantReadWriteData(functionCreateGoals);
+    goalsTable.grantReadWriteData(functionDeleteGoal);
+    goalsTable.grantReadWriteData(functionUpdateGoal);
+    goalsTable.grantReadWriteData(functionGetGoal);
   }
 }
