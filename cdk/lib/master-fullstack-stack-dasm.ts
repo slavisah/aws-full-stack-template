@@ -19,6 +19,9 @@ export class MyStack extends Stack {
     constructor(scope: Construct, id: string, props: StackProps = {}) {
         super(scope, id, props);
         
+        /*completed dynamo objects*/
+        //#region 
+        /*
         new iam.CfnRole(this, 'DynamoDbRole', {
             assumeRolePolicyDocument: {
               "version": "2012-10-17",
@@ -96,6 +99,9 @@ export class MyStack extends Stack {
               "writeCapacityUnits": 1
             },
         });
+        */
+        //#endregion
+        
         new lambda.CfnFunction(this, 'FunctionListGoals', {
             functionName: {
               "Fn::Sub": "${ProjectName}-ListGoals"
