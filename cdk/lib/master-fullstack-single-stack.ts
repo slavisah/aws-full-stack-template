@@ -4,6 +4,7 @@ import s3 = require('@aws-cdk/aws-s3');
 import lambda = require('@aws-cdk/aws-lambda');
 import iam = require('@aws-cdk/aws-iam');
 import { RemovalPolicy } from '@aws-cdk/core';
+import { Table } from '@aws-cdk/aws-dynamodb';
 
 export class MasterFullStackSingleStack extends cdk.Stack {
   /*DynamoDb*/
@@ -36,15 +37,12 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     dynamoDbRole.addToPolicy(goalsPolicy);
 
     const lambdaBucket = new s3.Bucket(this, 'AssetsBucket', {
-      accessControl: s3.BucketAccessControl.PRIVATE,
-      // metricsConfigurations: [
-      //   {
-      //     "id": "EntireBucket"
-      //   }
-      // ],
-      // websiteConfiguration: {
-      //   "indexDocument": "index.html"
-      // },
+      bucketName: 'aws-fullstack-template-us-west-2',
+      // accessControl: s3.BucketAccessControl.PRIVATE,
+      // metrics: [{
+      //   id: "EntireBucket"
+      // }],
+      // websiteIndexDocument: "index.html"
     });
 
     const functionListGoals = new lambda.Function(this, 'FunctionListGoals', {
@@ -55,9 +53,44 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       memorySize: 256,
       timeout: cdk.Duration.seconds(120),
       role: dynamoDbRole,
-      //environment
-      // fix this key
-      code: lambda.S3Code.fromBucket(lambdaBucket, 'key'),
+      environment: { "tableName" : goalsTable.tableName},
+      code: lambda.S3Code.fromBucket(lambdaBucket, "functions/ListGoals.zip"),
+    });
+
+    const functionCreateGoals = new lambda.Function(this, 'FunctionCreateGoal', {
+      functionName: `${this.ProjectName}-CreateGoal`,
+      runtime: lambda.Runtime.NODEJS_12_X,
+      description: 'Create goal for user id',
+      handler: 'index.handler',
+      memorySize: 256,
+      timeout: cdk.Duration.seconds(120),
+      role: dynamoDbRole,
+      environment: { "tableName" : goalsTable.tableName},
+      code: lambda.S3Code.fromBucket(lambdaBucket, "functions/CreateGoal.zip"),
+    });
+
+    const functionDeleteGoal = new lambda.Function(this, 'FunctionDeleteGoal', {
+      functionName: `${this.ProjectName}-DeleteGoal`,
+      runtime: lambda.Runtime.NODEJS_12_X,
+      description: 'Delete goal for user id',
+      handler: 'index.handler',
+      memorySize: 256,
+      timeout: cdk.Duration.seconds(120),
+      role: dynamoDbRole,
+      environment: { "tableName" : goalsTable.tableName},
+      code: lambda.S3Code.fromBucket(lambdaBucket, "functions/DeleteGoal.zip"),
+    });
+
+    const functionUpdateGoal = new lambda.Function(this, 'FunctionUpdateGoal', {
+      functionName: `${this.ProjectName}-UpdateGoal`,
+      runtime: lambda.Runtime.NODEJS_12_X,
+      description: 'Update goal for user id',
+      handler: 'index.handler',
+      memorySize: 256,
+      timeout: cdk.Duration.seconds(120),
+      role: dynamoDbRole,
+      environment: { "tableName" : goalsTable.tableName},
+      code: lambda.S3Code.fromBucket(lambdaBucket, "functions/UpdateGoal.zip"),
     });
   }
 }
