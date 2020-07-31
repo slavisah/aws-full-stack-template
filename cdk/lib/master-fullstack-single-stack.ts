@@ -50,7 +50,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     //#region
 
     const assetsBucket = new s3.Bucket(this, 'AssetsBucket', {
-      bucketName: 'aws-fullstack-template-us-west-2',
+      bucketName: `aws-fullstack-template-us-west-2-${getRandomInt(1000000)}`,
       blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       websiteIndexDocument: this.WebsiteIndexDocument,
@@ -306,4 +306,8 @@ export function addCorsOptions(apiResource: IResource) {
       ],
     }
   );
+}
+
+const getRandomInt = (max: number) => {
+  return Math.floor(Math.random() * Math.floor(max));
 }
