@@ -102,6 +102,8 @@ export class MyStack extends Stack {
         */
         //#endregion
         
+        /* completed lambda functions*/
+        //#region 
         new lambda.CfnFunction(this, 'FunctionListGoals', {
             functionName: {
               "Fn::Sub": "${ProjectName}-ListGoals"
@@ -442,6 +444,8 @@ export class MyStack extends Stack {
               ]
             },
         });
+        //#endregion
+
         new apigateway.CfnRestApi(this, 'AppApi', {
             name: {
               "Ref": "ProjectName"
@@ -822,6 +826,9 @@ export class MyStack extends Stack {
             },
             stageName: "prod",
         });
+
+        /*Completed Cognito Objects*/
+        //#region 
         new iam.CfnRole(this, 'SNSRole', {
             assumeRolePolicyDocument: {
               "version": "2012-10-17",
@@ -1056,12 +1063,17 @@ export class MyStack extends Stack {
               }
             },
         });
+        //#endregion
+
         new codecommit.CfnRepository(this, 'AssetsCodeRepository', {
             repositoryDescription: "Code repository for web application",
             repositoryName: {
               "Fn::Sub": "${ProjectName}-WebAssets"
             },
         });
+
+        /*Completed S3 Objects*/
+        //#region 
         new s3.CfnBucket(this, 'AssetsBucket', {
             accessControl: "Private",
             metricsConfigurations: [
@@ -1094,6 +1106,8 @@ export class MyStack extends Stack {
               ]
             },
         });
+        //#endregion
+
         new cloudfront.CfnCloudFrontOriginAccessIdentity(this, 'AssetsBucketOriginAccessIdentity', {
             cloudFrontOriginAccessIdentityConfig: {
               "comment": {
