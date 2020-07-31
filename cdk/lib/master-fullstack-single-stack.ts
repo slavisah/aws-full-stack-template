@@ -8,8 +8,8 @@ import cognito = require('@aws-cdk/aws-cognito');
 import { UserPool, UserPoolClientIdentityProvider, CfnIdentityPool } from '@aws-cdk/aws-cognito';
 import { FederatedPrincipal, PolicyDocument } from '@aws-cdk/aws-iam';
 import { BlockPublicAccess, BucketPolicy } from '@aws-cdk/aws-s3';
+import { RestApi, LambdaIntegration, IResource, MockIntegration, PassthroughBehavior } from '@aws-cdk/aws-apigateway';
 var path = require('path');
-
 
 export class MasterFullStackSingleStack extends cdk.Stack {
   /*DynamoDb*/
@@ -21,7 +21,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     super(scope, id, props);
 
     /* Dynamo Objects */
-    //#region 
+    //#region
     /* Create DynamoDB Goals Table */
     const goalsTable = new dynamodb.Table(this, 'TGoals', {
       tableName: `${this.ProjectName}-${this.TableName}`,
@@ -36,17 +36,18 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     const dynamoDbRole = new iam.Role(this, 'DynamoDbRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
     });
-    dynamoDbRole.addToPolicy(new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      actions: ['dynamodb:*'],
-      resources: [goalsTable.tableArn],
-    }));
+    dynamoDbRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['dynamodb:*'],
+        resources: [goalsTable.tableArn],
+      })
+    );
     //#endregion
 
     /* S3 Objects */
     //Todo - grant access to cloudfront user
-    //#region 
-
+    //#region
 
     const assetsBucket = new s3.Bucket(this, 'AssetsBucket', {
       bucketName: 'aws-fullstack-template-us-west-2',
@@ -57,7 +58,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     //#endregion
 
     /* Lambda Objects */
-    //#region 
+    //#region
     const functionListGoals = new lambda.Function(this, 'FunctionListGoals', {
       functionName: `${this.ProjectName}-ListGoals`,
       runtime: lambda.Runtime.NODEJS_12_X,
@@ -70,7 +71,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       code: lambda.Code.fromAsset(path.dirname('../functions/ListGoals.js')),
     });
 
-    const functionCreateGoals = new lambda.Function(this, 'FunctionCreateGoal', {
+    const functionCreateGoal = new lambda.Function(this, 'FunctionCreateGoal', {
       functionName: `${this.ProjectName}-CreateGoal`,
       runtime: lambda.Runtime.NODEJS_12_X,
       description: 'Create goal for user id',
@@ -119,7 +120,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     });
 
     goalsTable.grantReadWriteData(functionListGoals);
-    goalsTable.grantReadWriteData(functionCreateGoals);
+    goalsTable.grantReadWriteData(functionCreateGoal);
     goalsTable.grantReadWriteData(functionDeleteGoal);
     goalsTable.grantReadWriteData(functionUpdateGoal);
     goalsTable.grantReadWriteData(functionGetGoal);
@@ -128,16 +129,18 @@ export class MasterFullStackSingleStack extends cdk.Stack {
 
     /* Cognito Objects */
     //Todo: add api ad the end Invoke-API policy, set back to * if too difficult
-    //#region 
+    //#region
     /* Cognito SNS Policy */
     const cognitoSnsRole = new iam.Role(this, 'CognitoSnsRole', {
-      assumedBy: new iam.ServicePrincipal('cognito-idp.amazonaws.com')
+      assumedBy: new iam.ServicePrincipal('cognito-idp.amazonaws.com'),
     });
-    cognitoSnsRole.addToPolicy(new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      actions: ['sns:publish'],
-      resources: ['*']
-    }));
+    cognitoSnsRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['sns:publish'],
+        resources: ['*'],
+      })
+    );
 
     /* Cognito User Pool */
     const userPool = new UserPool(this, 'UserPool', {
@@ -156,21 +159,21 @@ export class MasterFullStackSingleStack extends cdk.Stack {
         requireLowercase: false,
         requireDigits: false,
         requireSymbols: false,
-        requireUppercase: false
+        requireUppercase: false,
       },
       userVerification: {
         emailSubject: 'Your verification code',
         emailBody: 'Here is your verification code: {####}',
         emailStyle: cognito.VerificationEmailStyle.CODE,
         smsMessage: 'Your username is {username}, Your verification code is {####}',
-      }
+      },
     });
 
     /* User Pool Client */
     const userPoolClient = new cognito.UserPoolClient(this, 'UserPoolClient', {
       userPoolClientName: `${this.ProjectName}-UserPoolClient`,
       generateSecret: false,
-      userPool: userPool
+      userPool: userPool,
     });
 
     /* Identity Pool */
@@ -178,61 +181,129 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       identityPoolName: `${this.ProjectName}Identity`,
       allowUnauthenticatedIdentities: false,
       cognitoIdentityProviders: [
-        { clientId: userPoolClient.userPoolClientId, providerName: userPool.userPoolProviderName }
-      ]
+        { clientId: userPoolClient.userPoolClientId, providerName: userPool.userPoolProviderName },
+      ],
     });
 
     /* Cognito Roles */
     /* Unauthorized Role/Policy */
     const unauthenticatedRole = new iam.Role(this, 'CognitoDefaultUnauthenticatedRole', {
-      assumedBy: new iam.FederatedPrincipal('cognito-identity.amazonaws.com', {
-        'StringEquals': { 'cognito-identity.amazonaws.com:aud': identityPool.ref },
-        'ForAnyValue:StringLike': { 'cognito-identity.amazonaws.com:amr': 'unauthenticated' },
-      }, 'sts:AssumeRoleWithWebIdentity')
+      assumedBy: new iam.FederatedPrincipal(
+        'cognito-identity.amazonaws.com',
+        {
+          StringEquals: { 'cognito-identity.amazonaws.com:aud': identityPool.ref },
+          'ForAnyValue:StringLike': { 'cognito-identity.amazonaws.com:amr': 'unauthenticated' },
+        },
+        'sts:AssumeRoleWithWebIdentity'
+      ),
     });
-    unauthenticatedRole.addToPolicy(new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      actions: [
-        'mobileanalytics:PutEvents',
-        'cognito-sync:*'
-      ],
-      resources: ['*'],
-    }));
+    unauthenticatedRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['mobileanalytics:PutEvents', 'cognito-sync:*'],
+        resources: ['*'],
+      })
+    );
     /* Authorized Role/Policy */
     const authenticatedRole = new iam.Role(this, 'CognitoDefaultAuthenticatedRole', {
-      assumedBy: new iam.FederatedPrincipal('cognito-identity.amazonaws.com', {
-        'StringEquals': { 'cognito-identity.amazonaws.com:aud': identityPool.ref },
-        'ForAnyValue:StringLike': { 'cognito-identity.amazonaws.com:amr': 'authenticated' },
-      }, 'sts:AssumeRoleWithWebIdentity'),
+      assumedBy: new iam.FederatedPrincipal(
+        'cognito-identity.amazonaws.com',
+        {
+          StringEquals: { 'cognito-identity.amazonaws.com:aud': identityPool.ref },
+          'ForAnyValue:StringLike': { 'cognito-identity.amazonaws.com:amr': 'authenticated' },
+        },
+        'sts:AssumeRoleWithWebIdentity'
+      ),
     });
-    authenticatedRole.addToPolicy(new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      actions: [
-        'mobileanalytics:PutEvents',
-        'cognito-sync:*',
-        'cognito-identity:*'
-      ],
-      resources: ['*'],
-    }));
-    authenticatedRole.addToPolicy(new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      actions: [
-        'execute-api:Invoke'
-      ],
-      resources: [
-        `arn:aws:execute-api:${process.env.CDK_DEFAULT_REGION}:${process.env.CDK_DEFAULT_ACCOUNT}:AppApi`
-      ]
-    }));
+    authenticatedRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['mobileanalytics:PutEvents', 'cognito-sync:*', 'cognito-identity:*'],
+        resources: ['*'],
+      })
+    );
+    authenticatedRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['execute-api:Invoke'],
+        resources: [`arn:aws:execute-api:${process.env.CDK_DEFAULT_REGION}:${process.env.CDK_DEFAULT_ACCOUNT}:AppApi`],
+      })
+    );
     /* Create Default Policy */
     const defaultPolicy = new cognito.CfnIdentityPoolRoleAttachment(this, 'DefaultValid', {
       identityPoolId: identityPool.ref,
       roles: {
-        'unauthenticated': unauthenticatedRole.roleArn,
-        'authenticated': authenticatedRole.roleArn
-      }
+        unauthenticated: unauthenticatedRole.roleArn,
+        authenticated: authenticatedRole.roleArn,
+      },
     });
 
     //#endregion
 
+    /* Api Gateway */
+    //#region
+    const appApi = new RestApi(this, 'AppApi', {
+      failOnWarnings: true,
+      restApiName: this.ProjectName,
+      description: 'API used for Goals requests',
+    });
+
+    const items = appApi.root.addResource('items');
+    const getAllIntegration = new LambdaIntegration(functionListGoals);
+    items.addMethod('GET', getAllIntegration);
+
+    const createOneIntegration = new LambdaIntegration(functionCreateGoal);
+    items.addMethod('POST', createOneIntegration);
+    addCorsOptions(items);
+
+    const singleItem = items.addResource('{id}');
+    const getOneIntegration = new LambdaIntegration(functionGetGoal);
+    singleItem.addMethod('GET', getOneIntegration);
+
+    const updateOneIntegration = new LambdaIntegration(functionUpdateGoal);
+    singleItem.addMethod('PATCH', updateOneIntegration);
+
+    const deleteOneIntegration = new LambdaIntegration(functionDeleteGoal);
+    singleItem.addMethod('DELETE', deleteOneIntegration);
+    addCorsOptions(singleItem);
+
+    //#endregion
   }
+}
+
+export function addCorsOptions(apiResource: IResource) {
+  apiResource.addMethod(
+    'OPTIONS',
+    new MockIntegration({
+      integrationResponses: [
+        {
+          statusCode: '200',
+          responseParameters: {
+            'method.response.header.Access-Control-Allow-Headers':
+              "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'",
+            'method.response.header.Access-Control-Allow-Origin': "'*'",
+            'method.response.header.Access-Control-Allow-Credentials': "'false'",
+            'method.response.header.Access-Control-Allow-Methods': "'OPTIONS,GET,PUT,POST,DELETE'",
+          },
+        },
+      ],
+      passthroughBehavior: PassthroughBehavior.NEVER,
+      requestTemplates: {
+        'application/json': '{"statusCode": 200}',
+      },
+    }),
+    {
+      methodResponses: [
+        {
+          statusCode: '200',
+          responseParameters: {
+            'method.response.header.Access-Control-Allow-Headers': true,
+            'method.response.header.Access-Control-Allow-Methods': true,
+            'method.response.header.Access-Control-Allow-Credentials': true,
+            'method.response.header.Access-Control-Allow-Origin': true,
+          },
+        },
+      ],
+    }
+  );
 }
