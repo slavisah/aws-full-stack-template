@@ -6,18 +6,19 @@ import lambda = require('@aws-cdk/aws-lambda');
 import iam = require('@aws-cdk/aws-iam');
 import cognito = require('@aws-cdk/aws-cognito');
 import { UserPool, UserPoolClientIdentityProvider, CfnIdentityPool } from '@aws-cdk/aws-cognito';
-import { FederatedPrincipal, PolicyDocument } from '@aws-cdk/aws-iam';
+import { FederatedPrincipal, PolicyDocument, User, Policy } from '@aws-cdk/aws-iam';
 import { BlockPublicAccess, BucketPolicy } from '@aws-cdk/aws-s3';
 import codecommit = require('@aws-cdk/aws-codecommit');
 import codepipeline = require('@aws-cdk/aws-codepipeline');
 import codepipelineactions = require('@aws-cdk/aws-codepipeline-actions');
 import codebuild = require('@aws-cdk/aws-codebuild');
-import { RestApi, LambdaIntegration, IResource, MockIntegration, PassthroughBehavior } from '@aws-cdk/aws-apigateway';
+import { RestApi, LambdaIntegration, IResource, MockIntegration, PassthroughBehavior, CfnAuthorizer, AuthorizationType } from '@aws-cdk/aws-apigateway';
+
 
 var path = require('path');
 
 export class MasterFullStackSingleStack extends cdk.Stack {
-  /*DynamoDb*/
+
   private readonly ProjectName: string = 'MyCDKGoals';
   private readonly TableName: string = 'CDKGoals';
   private readonly WebsiteIndexDocument: string = 'index.html';
@@ -41,28 +42,34 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     const dynamoDbRole = new iam.Role(this, 'DynamoDbRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
     });
-    dynamoDbRole.addToPolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: ['dynamodb:*'],
-        resources: [goalsTable.tableArn],
-      })
-    );
+
+    const goalsPolicy = new Policy(this, 'GoalsPolicy', {
+      policyName: 'GoalsPolicy',
+      roles: [dynamoDbRole],
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['dynamodb:*'],
+          resources: [goalsTable.tableArn],
+        })
+      ]
+    });
+
     //#endregion
 
     /* S3 Objects */
-    //Todo - grant access to cloudfront user
+    //Todo - grant access to cloudfront user and uncomment block all
     //#region
-
     const assetsBucket = new s3.Bucket(this, 'AssetsBucket', {
-      bucketName: `aws-fullstack-template-us-west-2-${getRandomInt(1000000)}`,
-      blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+      bucketName: `aws-fullstack-template-assets-${getRandomInt(1000000)}`,
+      //blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       websiteIndexDocument: this.WebsiteIndexDocument,
+      websiteErrorDocument: this.WebsiteIndexDocument
     });
 
     const pipelineArtifactsBucket = new s3.Bucket(this, 'PipelineArtifactsBucket', {
-      bucketName: 'aws-fullstack-template-us-west-2-artifacts',
+      bucketName: `aws-fullstack-template-artifacts-${getRandomInt(1000000)}`,
       blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
       removalPolicy: cdk.RemovalPolicy.DESTROY
     });
@@ -80,6 +87,18 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       role: dynamoDbRole,
       environment: { TABLE_NAME: goalsTable.tableName },
       code: lambda.Code.fromAsset(path.dirname('../functions/ListGoals.js')),
+    });
+
+    const functionListAllGoals = new lambda.Function(this, 'FunctionListAllGoals', {
+      functionName: `${this.ProjectName}-ListAllGoals`,
+      runtime: lambda.Runtime.NODEJS_12_X,
+      description: 'Get list of goals for everyone',
+      handler: 'ListAllGoals.handler',
+      memorySize: 256,
+      timeout: cdk.Duration.seconds(120),
+      role: dynamoDbRole,
+      environment: { TABLE_NAME: goalsTable.tableName },
+      code: lambda.Code.fromAsset(path.dirname('../functions/ListAllGoals.js')),
     });
 
     const functionCreateGoal = new lambda.Function(this, 'FunctionCreateGoal', {
@@ -125,12 +144,13 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       handler: 'GetGoal.handler',
       memorySize: 256,
       timeout: cdk.Duration.seconds(120),
-      role: dynamoDbRole,
+      //role: dynamoDbRole,
       environment: { TABLE_NAME: goalsTable.tableName },
       code: lambda.Code.fromAsset(path.dirname('../functions/GetGoal.js')),
     });
 
     goalsTable.grantReadWriteData(functionListGoals);
+    goalsTable.grantReadWriteData(functionListAllGoals);
     goalsTable.grantReadWriteData(functionCreateGoal);
     goalsTable.grantReadWriteData(functionDeleteGoal);
     goalsTable.grantReadWriteData(functionUpdateGoal);
@@ -139,19 +159,23 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     //#endregion
 
     /* Cognito Objects */
-    //Todo: add api ad the end Invoke-API policy, set back to * if too difficult
     //#region
     /* Cognito SNS Policy */
-    const cognitoSnsRole = new iam.Role(this, 'CognitoSnsRole', {
+    const cognitoSnsRole = new iam.Role(this, 'SNSRole', {
       assumedBy: new iam.ServicePrincipal('cognito-idp.amazonaws.com'),
     });
-    cognitoSnsRole.addToPolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: ['sns:publish'],
-        resources: ['*'],
-      })
-    );
+
+    const snsPolicy = new Policy(this, 'CognitoSNSPolicy', {
+      policyName: 'CognitoSNSPolicy',
+      roles: [cognitoSnsRole],
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['sns:publish'],
+          resources: ['*'],
+        })
+      ]
+    });
 
     /* Cognito User Pool */
     const userPool = new UserPool(this, 'UserPool', {
@@ -184,13 +208,13 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     const userPoolClient = new cognito.UserPoolClient(this, 'UserPoolClient', {
       userPoolClientName: `${this.ProjectName}-UserPoolClient`,
       generateSecret: false,
-      userPool: userPool,
+      userPool: userPool
     });
 
     /* Identity Pool */
     const identityPool = new cognito.CfnIdentityPool(this, 'IdentityPool', {
       identityPoolName: `${this.ProjectName}Identity`,
-      allowUnauthenticatedIdentities: false,
+      allowUnauthenticatedIdentities: true,
       cognitoIdentityProviders: [
         { clientId: userPoolClient.userPoolClientId, providerName: userPool.userPoolProviderName },
       ],
@@ -198,7 +222,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
 
     /* Cognito Roles */
     /* Unauthorized Role/Policy */
-    const unauthenticatedRole = new iam.Role(this, 'CognitoDefaultUnauthenticatedRole', {
+    const unauthorizedRole = new iam.Role(this, 'CognitoUnAuthorizedRole', {
       assumedBy: new iam.FederatedPrincipal(
         'cognito-identity.amazonaws.com',
         {
@@ -206,17 +230,23 @@ export class MasterFullStackSingleStack extends cdk.Stack {
           'ForAnyValue:StringLike': { 'cognito-identity.amazonaws.com:amr': 'unauthenticated' },
         },
         'sts:AssumeRoleWithWebIdentity'
-      ),
+      )
     });
-    unauthenticatedRole.addToPolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: ['mobileanalytics:PutEvents', 'cognito-sync:*'],
-        resources: ['*'],
-      })
-    );
+
+    const cognitoUnauthorizedPolicy = new Policy(this, 'CognitoUnauthorizedPolicy', {
+      policyName: 'CognitoUnauthorizedPolicy',
+      roles: [unauthorizedRole],
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['mobileanalytics:PutEvents', 'cognito-sync:*'],
+          resources: ['*'],
+        })
+      ]
+    })
+
     /* Authorized Role/Policy */
-    const authenticatedRole = new iam.Role(this, 'CognitoDefaultAuthenticatedRole', {
+    const authorizedRole = new iam.Role(this, 'CognitoAuthorizedRole', {
       assumedBy: new iam.FederatedPrincipal(
         'cognito-identity.amazonaws.com',
         {
@@ -226,239 +256,293 @@ export class MasterFullStackSingleStack extends cdk.Stack {
         'sts:AssumeRoleWithWebIdentity'
       ),
     });
-    authenticatedRole.addToPolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: ['mobileanalytics:PutEvents', 'cognito-sync:*', 'cognito-identity:*'],
-        resources: ['*'],
-      })
-    );
-    authenticatedRole.addToPolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: ['execute-api:Invoke'],
-        resources: [`arn:aws:execute-api:${process.env.CDK_DEFAULT_REGION}:${process.env.CDK_DEFAULT_ACCOUNT}:AppApi`],
-      })
-    );
+
+    const authorizedPolicy = new Policy(this, 'CognitoAuthorizedPolicy', {
+      policyName: 'CognitoAuthorizedPolicy',
+      roles: [authorizedRole],
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['mobileanalytics:PutEvents', 'cognito-sync:*', 'cognito-identity:*'],
+          resources: ['*']
+        }),
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['execute-api:Invoke'],
+          resources: [`*`]
+        })
+      ]
+    });
+
     /* Create Default Policy */
     const defaultPolicy = new cognito.CfnIdentityPoolRoleAttachment(this, 'DefaultValid', {
       identityPoolId: identityPool.ref,
       roles: {
-        unauthenticated: unauthenticatedRole.roleArn,
-        authenticated: authenticatedRole.roleArn,
+        unauthenticated: unauthorizedRole.roleArn,
+        authenticated: authorizedRole.roleArn,
       },
     });
-
     //#endregion
 
-    /* Code Objects */
+    /* CodeBuild/Commit/Pipeline Objects */
     //Todo - uncomment and test (manually deploy for now)
     //#region 
+    /* Code Commit Repo */
+    const codeRepository = new codecommit.Repository(this, 'CodeRepository', {
+      repositoryName: `${this.ProjectName}-WebAssets`
+    });
 
-    // /* Code Commit Repo */
-    // const codeRepository = new codecommit.Repository(this, 'CodeRepository', {
-    //   repositoryName: `${this.ProjectName}-WebAssets`
-    // });
+    /* CodeBuild Role */
+    const codeBuildRole = new iam.Role(this, 'CodeBuildRole', {
+      assumedBy: new iam.ServicePrincipal('codebuild.amazonaws.com'),
+    });
 
-    // /* CodeBuild Role */
-    // const codeBuildRole = new iam.Role(this, 'CodeBuildRole', {
-    //   assumedBy: new iam.ServicePrincipal('codebuild.amazonaws.com'),
-    // });
-    // codeBuildRole.addToPolicy(new iam.PolicyStatement({
-    //   effect: iam.Effect.ALLOW,
-    //   actions: [
-    //     's3:PutObject',
-    //     's3:GetObject',
-    //     's3:GetObjectVersion',
-    //     's3:GetBucketVersioning'
-    //   ],
-    //   resources: [assetsBucket.bucketArn, pipelineArtifactsBucket.bucketArn]
-    // }));
-    // codeBuildRole.addToPolicy(new iam.PolicyStatement({
-    //   effect: iam.Effect.ALLOW,
-    //   actions: [
-    //     'logs:CreateLogStream',
-    //     'logs:PutLogEvents',
-    //     'logs:CreateLogGroup',
-    //     'cloudfront:CreateInvalidation'
-    //   ],
-    //   resources: ['*']
-    // }));
+    const codebuildPolicy = new Policy(this, 'CodebuildPolicy', {
+      policyName: 'CodebuildPolicy',
+      roles: [codeBuildRole],
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: [
+            's3:PutObject',
+            's3:GetObject',
+            's3:GetObjectVersion',
+            's3:GetBucketVersioning'
+          ],
+          resources: [assetsBucket.bucketArn, pipelineArtifactsBucket.bucketArn]
+        })
+      ]
+    });
 
-    // /* Code Build Project */
-    // const codeBuildProject = new codebuild.Project(this, 'CodeBuildProject', {
-    //   projectName: `${this.ProjectName}-build`,
-    //   description: `Building stage for ${this.ProjectName}.`,
-    //   environment: {
-    //     computeType: codebuild.ComputeType.SMALL,
-    //     buildImage: codebuild.LinuxBuildImage.AMAZON_LINUX_2
-    //   },
-    //   role: codeBuildRole,
-    //   buildSpec: codebuild.BuildSpec.fromObject({
-    //     version: '0.2',
-    //     phases: {
-    //       install: {
-    //         commands: [
-    //           'runtime-versions:',
-    //           'nodejs: 10'
-    //         ],
-    //       },
-    //       pre_build: {
-    //         commands: [
-    //           '- echo Installing NPM dependencies..',
-    //           '- npm install\n'
-    //         ],
-    //       },
-    //       build: {
-    //         commands: [
-    //           '- npm run build',
-    //         ],
-    //       },
-    //       post_build: {
-    //         commands: [
-    //           '- echo Uploading to AssetsBucket...',
-    //           `- aws s3 cp --recursive ./build s3://${assetsBucket}/`,
-    //           `- aws s3 cp --cache-control=\"max-age=0, no-cache, no-store, must-revalidate\" ./build/service-worker.js s3://${assetsBucket}/`,
-    //           `- aws s3 cp --cache-control=\"max-age=0, no-cache, no-store, must-revalidate\" ./build/index.html s3://${assetsBucket}/`,
-    //           //`- aws cloudfront create-invalidation --distribution-id ${AssetsCDN} --paths /index.html /service-worker.js\n\nartifacts:\n  files:`,
-    //           "- '**/*'\n  base-directory: build"
-    //         ],
-    //       },
-    //     },
-    //   }),
-    //   timeout: cdk.Duration.minutes(5)
-    // });
-    // cdk.Tag.add(codeBuildProject, 'app-name', `${this.ProjectName}`);
+    const codebuildLogsPolicy = new Policy(this, 'CodebuildLogsPolicy', {
+      policyName: 'CodebuildLogsPolicy',
+      roles: [codeBuildRole],
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: [
+            'logs:CreateLogStream',
+            'logs:PutLogEvents',
+            'logs:CreateLogGroup',
+            'cloudfront:CreateInvalidation'
+          ],
+          resources: ['*']
+        })
+      ]
+    });
 
+    /* CodeBuild Project */
+    const codeBuildProject = new codebuild.Project(this, 'CodeBuildProject', {
+      projectName: `${this.ProjectName}-build`,
+      description: `Building stage for ${this.ProjectName}.`,
+      environment: {
+        computeType: codebuild.ComputeType.SMALL,
+        buildImage: codebuild.LinuxBuildImage.AMAZON_LINUX_2
+      },
+      role: codeBuildRole,
+      buildSpec: codebuild.BuildSpec.fromObject({
+        version: '0.2',
+        phases: {
+          install: {
+            commands: [
+              'runtime-versions:',
+              'nodejs: 10'
+            ],
+          },
+          pre_build: {
+            commands: [
+              '- echo Installing NPM dependencies..',
+              '- npm install'
+            ],
+          },
+          build: {
+            commands: [
+              '- npm run build',
+            ],
+          },
+          post_build: {
+            commands: [
+              '- echo Uploading to AssetsBucket...',
+              `- aws s3 cp --recursive ./build s3://${assetsBucket}/`,
+              `- aws s3 cp --cache-control=\"max-age=0, no-cache, no-store, must-revalidate\" ./build/service-worker.js s3://${assetsBucket}/`,
+              `- aws s3 cp --cache-control=\"max-age=0, no-cache, no-store, must-revalidate\" ./build/index.html s3://${assetsBucket}/`,
+              //`- aws cloudfront create-invalidation --distribution-id ${AssetsCDN} --paths /index.html /service-worker.js\n\nartifacts:\n  files:`,
+              "- '**/*'\n  base-directory: build"
+            ],
+          },
+        },
+      }),
+      timeout: cdk.Duration.minutes(5)
+    });
+    cdk.Tag.add(codeBuildProject, 'app-name', `${this.ProjectName}`);
+    
 
-    // /* CodePipeline Role */
-    // const codePipelineRole = new iam.Role(this, 'CodePipelineRole', {
-    //   assumedBy: new iam.ServicePrincipal('codepipeline.amazonaws.com'),
-    // });
-    // codePipelineRole.addToPolicy(new iam.PolicyStatement({
-    //   effect: iam.Effect.ALLOW,
-    //   actions: [
-    //     'codecommit:GetBranch',
-    //     'codecommit:GetCommit',
-    //     'codecommit:UploadArchive',
-    //     'codecommit:GetUploadArchiveStatus',
-    //     'codecommit:CancelUploadArchive'
-    //   ],
-    //   resources: [codeRepository.repositoryArn]
-    // }));
-    // codePipelineRole.addToPolicy(new iam.PolicyStatement({
-    //   effect: iam.Effect.ALLOW,
-    //   actions: [
-    //     's3:PutObject',
-    //     's3:GetObject'
-    //   ],
-    //   resources: [pipelineArtifactsBucket.bucketArn]
-    // }));
-    // codePipelineRole.addToPolicy(new iam.PolicyStatement({
-    //   effect: iam.Effect.ALLOW,
-    //   actions: [
-    //     'codebuild:BatchGetBuilds',
-    //     'codebuild:StartBuild'
-    //   ],
-    //   resources: [codeBuildProject.projectArn]
-    // }));
+    /* CodePipeline Roles/Policies */
+    const codePipelineRole = new iam.Role(this, 'CodePipelineRole', {
+      assumedBy: new iam.ServicePrincipal('codepipeline.amazonaws.com'),
+    });
 
-    // /* Code Pipeline Object */
-    // const codePipeline = new codepipeline.Pipeline(this, 'CodePipeline', {
-    //   pipelineName: `${this.ProjectName}-Assets-Pipeline`,
-    //   role: codePipelineRole,
-    //   artifactBucket: pipelineArtifactsBucket
-    // });
-    // const sourceOutput = new codepipeline.Artifact(`${this.ProjectName}-SourceArtifact`);
-    // const sourceAction = new codepipelineactions.CodeCommitSourceAction({
-    //   actionName: 'CodeCommit',
-    //   repository: codeRepository,
-    //   output: sourceOutput,
-    //   branch: 'master'
-    // });
-    // codePipeline.addStage({
-    //   stageName: 'Source',
-    //   actions: [sourceAction],
-    // });
+    const codeCommitForCodePipelinePolicy = new Policy(this, 'CodecommitForCodepipelinePolicy', {
+      policyName: 'CodecommitForCodepipelinePolicy',
+      roles: [codePipelineRole],
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: [
+            'codecommit:GetBranch',
+            'codecommit:GetCommit',
+            'codecommit:UploadArchive',
+            'codecommit:GetUploadArchiveStatus',
+            'codecommit:CancelUploadArchive'
+          ],
+          resources: [codeRepository.repositoryArn]
+        })
+      ]
+    });
 
-    // const buildOutput = new codepipeline.Artifact(`${this.ProjectName}-BuildArtifact`);
-    // const buildAction = new codepipelineactions.CodeBuildAction({
-    //   actionName: 'build-and-deploy',
-    //   project: codeBuildProject,
-    //   input: sourceOutput,
-    //   outputs: [buildOutput]
-    // });
-    // codePipeline.addStage({
-    //   stageName: 'Build',
-    //   actions: [buildAction]
-    // });
+    const artifactsForPipelinePolicy = new Policy(this, 'ArtifactsForPipelinePolicy', {
+      policyName: 'ArtifactsForPipelinePolicy',
+      roles: [codePipelineRole],
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: [
+            's3:PutObject',
+            's3:GetObject'
+          ],
+          resources: [pipelineArtifactsBucket.bucketArn]
+        })
+      ]
+    });
+
+    const codebuildForPipelinePolicy = new Policy(this, 'CodebuildForPipelinePolicy', {
+      policyName: 'CodebuildForPipelinePolicy',
+      roles: [codePipelineRole],
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: [
+            'codebuild:BatchGetBuilds',
+            'codebuild:StartBuild'
+          ],
+          resources: [codeBuildProject.projectArn]
+        })
+      ]
+    });
+
+    /* Code Pipeline Object */
+    const codePipeline = new codepipeline.Pipeline(this, 'CodePipeline', {
+      pipelineName: `${this.ProjectName}-Assets-Pipeline`,
+      role: codePipelineRole,
+      artifactBucket: pipelineArtifactsBucket
+    });
+    const sourceOutput = new codepipeline.Artifact(`${this.ProjectName}-SourceArtifact`);
+    const sourceAction = new codepipelineactions.CodeCommitSourceAction({
+      actionName: 'CodeCommit',
+      repository: codeRepository,
+      output: sourceOutput,
+      branch: 'master'
+    });
+    codePipeline.addStage({
+      stageName: 'Source',
+      actions: [sourceAction],
+    });
+
+    const buildOutput = new codepipeline.Artifact(`${this.ProjectName}-BuildArtifact`);
+    const buildAction = new codepipelineactions.CodeBuildAction({
+      actionName: 'build-and-deploy',
+      project: codeBuildProject,
+      input: sourceOutput,
+      outputs: [buildOutput]
+    });
+    codePipeline.addStage({
+      stageName: 'Build',
+      actions: [buildAction]
+    });
     //#endregion
 
     /* Api Gateway */
     //#region
     const appApi = new RestApi(this, 'AppApi', {
-      failOnWarnings: true,
       restApiName: this.ProjectName,
-      description: 'API used for Goals requests',
     });
 
-    const items = appApi.root.addResource('items');
-    const getAllIntegration = new LambdaIntegration(functionListGoals);
-    items.addMethod('GET', getAllIntegration);
+    const authorizer = new CfnAuthorizer(this, 'ApiAuthorizer', {
+      restApiId: appApi.restApiId,
+      name: 'ApiAuthorizer',
+      type: 'COGNITO_USER_POOLS',
+      identitySource: 'method.request.header.Authorization',
+      providerArns: [userPool.userPoolArn]
+    });
+
+
+    appApi.root.addMethod('ANY');
+
+    const items = appApi.root.addResource('goals');
+    const getAllIntegration = new LambdaIntegration(functionListAllGoals);
+    items.addMethod('GET', getAllIntegration, {
+      authorizationType: AuthorizationType.IAM,
+      authorizer: { authorizerId: authorizer.ref }
+    });
 
     const createOneIntegration = new LambdaIntegration(functionCreateGoal);
-    items.addMethod('POST', createOneIntegration);
+    items.addMethod('POST', createOneIntegration, {
+      authorizationType: AuthorizationType.IAM,
+      authorizer: { authorizerId: authorizer.ref }
+    });
     addCorsOptions(items);
 
     const singleItem = items.addResource('{id}');
     const getOneIntegration = new LambdaIntegration(functionGetGoal);
-    singleItem.addMethod('GET', getOneIntegration);
+    singleItem.addMethod('GET', getOneIntegration, {
+      authorizationType: AuthorizationType.IAM,
+      authorizer: { authorizerId: authorizer.ref }
+    });
 
     const updateOneIntegration = new LambdaIntegration(functionUpdateGoal);
-    singleItem.addMethod('PATCH', updateOneIntegration);
+    singleItem.addMethod('PUT', updateOneIntegration, {
+      authorizationType: AuthorizationType.IAM,
+      authorizer: { authorizerId: authorizer.ref }
+    });
 
     const deleteOneIntegration = new LambdaIntegration(functionDeleteGoal);
-    singleItem.addMethod('DELETE', deleteOneIntegration);
+    singleItem.addMethod('DELETE', deleteOneIntegration, {
+      authorizationType: AuthorizationType.IAM,
+      authorizer: { authorizerId: authorizer.ref }
+    });
     addCorsOptions(singleItem);
+
     //#endregion
+
   }
 }
 
 export function addCorsOptions(apiResource: IResource) {
-  apiResource.addMethod(
-    'OPTIONS',
-    new MockIntegration({
-      integrationResponses: [
-        {
-          statusCode: '200',
-          responseParameters: {
-            'method.response.header.Access-Control-Allow-Headers':
-              "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'",
-            'method.response.header.Access-Control-Allow-Origin': "'*'",
-            'method.response.header.Access-Control-Allow-Credentials': "'false'",
-            'method.response.header.Access-Control-Allow-Methods': "'OPTIONS,GET,PUT,POST,DELETE'",
-          },
-        },
-      ],
-      passthroughBehavior: PassthroughBehavior.NEVER,
-      requestTemplates: {
-        'application/json': '{"statusCode": 200}',
+  apiResource.addMethod('OPTIONS', new MockIntegration({
+    integrationResponses: [{
+      statusCode: '200',
+      responseParameters: {
+        'method.response.header.Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'",
+        'method.response.header.Access-Control-Allow-Origin': "'*'",
+        'method.response.header.Access-Control-Allow-Credentials': "'false'",
+        'method.response.header.Access-Control-Allow-Methods': "'OPTIONS,GET,PUT,POST,DELETE'",
       },
-    }),
-    {
-      methodResponses: [
-        {
-          statusCode: '200',
-          responseParameters: {
-            'method.response.header.Access-Control-Allow-Headers': true,
-            'method.response.header.Access-Control-Allow-Methods': true,
-            'method.response.header.Access-Control-Allow-Credentials': true,
-            'method.response.header.Access-Control-Allow-Origin': true,
-          },
-        },
-      ],
-    }
-  );
+    }],
+    passthroughBehavior: PassthroughBehavior.NEVER,
+    requestTemplates: {
+      "application/json": "{\"statusCode\": 200}"
+    },
+  }), {
+    methodResponses: [{
+      statusCode: '200',
+      responseParameters: {
+        'method.response.header.Access-Control-Allow-Headers': true,
+        'method.response.header.Access-Control-Allow-Methods': true,
+        'method.response.header.Access-Control-Allow-Credentials': true,
+        'method.response.header.Access-Control-Allow-Origin': true,
+      },
+    }]
+  })
 }
 
 const getRandomInt = (max: number) => {
