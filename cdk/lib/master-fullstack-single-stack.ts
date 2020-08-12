@@ -1,7 +1,8 @@
 import * as cdk from '@aws-cdk/core';
-import { RemovalPolicy } from '@aws-cdk/core';
+import { RemovalPolicy, CfnOutput } from '@aws-cdk/core';
 import * as dynamodb from '@aws-cdk/aws-dynamodb';
 import s3 = require('@aws-cdk/aws-s3');
+import s3deploy = require('@aws-cdk/aws-s3-deployment');
 import lambda = require('@aws-cdk/aws-lambda');
 import iam = require('@aws-cdk/aws-iam');
 import cognito = require('@aws-cdk/aws-cognito');
@@ -284,182 +285,9 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     });
     //#endregion
 
-    /* CodeBuild/Commit/Pipeline Objects */
-    //Todo - uncomment and test (manually deploy for now)
-    //#region 
-    /* Code Commit Repo */
-    const codeRepository = new codecommit.Repository(this, 'CodeRepository', {
-      repositoryName: `${this.ProjectName}-WebAssets`
-    });
+    /* Insert Code Build Objects Here */
 
-    /* CodeBuild Role */
-    const codeBuildRole = new iam.Role(this, 'CodeBuildRole', {
-      assumedBy: new iam.ServicePrincipal('codebuild.amazonaws.com'),
-    });
-
-    const codebuildPolicy = new Policy(this, 'CodebuildPolicy', {
-      policyName: 'CodebuildPolicy',
-      roles: [codeBuildRole],
-      statements: [
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: [
-            's3:PutObject',
-            's3:GetObject',
-            's3:GetObjectVersion',
-            's3:GetBucketVersioning'
-          ],
-          resources: [assetsBucket.bucketArn, pipelineArtifactsBucket.bucketArn]
-        })
-      ]
-    });
-
-    const codebuildLogsPolicy = new Policy(this, 'CodebuildLogsPolicy', {
-      policyName: 'CodebuildLogsPolicy',
-      roles: [codeBuildRole],
-      statements: [
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: [
-            'logs:CreateLogStream',
-            'logs:PutLogEvents',
-            'logs:CreateLogGroup',
-            'cloudfront:CreateInvalidation'
-          ],
-          resources: ['*']
-        })
-      ]
-    });
-
-    /* CodeBuild Project */
-    const codeBuildProject = new codebuild.Project(this, 'CodeBuildProject', {
-      projectName: `${this.ProjectName}-build`,
-      description: `Building stage for ${this.ProjectName}.`,
-      environment: {
-        computeType: codebuild.ComputeType.SMALL,
-        buildImage: codebuild.LinuxBuildImage.AMAZON_LINUX_2
-      },
-      role: codeBuildRole,
-      buildSpec: codebuild.BuildSpec.fromObject({
-        version: '0.2',
-        phases: {
-          install: {
-            commands: [
-              'runtime-versions:',
-              'nodejs: 10'
-            ],
-          },
-          pre_build: {
-            commands: [
-              '- echo Installing NPM dependencies..',
-              '- npm install'
-            ],
-          },
-          build: {
-            commands: [
-              '- npm run build',
-            ],
-          },
-          post_build: {
-            commands: [
-              '- echo Uploading to AssetsBucket...',
-              `- aws s3 cp --recursive ./build s3://${assetsBucket}/`,
-              `- aws s3 cp --cache-control=\"max-age=0, no-cache, no-store, must-revalidate\" ./build/service-worker.js s3://${assetsBucket}/`,
-              `- aws s3 cp --cache-control=\"max-age=0, no-cache, no-store, must-revalidate\" ./build/index.html s3://${assetsBucket}/`,
-              //`- aws cloudfront create-invalidation --distribution-id ${AssetsCDN} --paths /index.html /service-worker.js\n\nartifacts:\n  files:`,
-              "- '**/*'\n  base-directory: build"
-            ],
-          },
-        },
-      }),
-      timeout: cdk.Duration.minutes(5)
-    });
-    cdk.Tag.add(codeBuildProject, 'app-name', `${this.ProjectName}`);
-    
-
-    /* CodePipeline Roles/Policies */
-    const codePipelineRole = new iam.Role(this, 'CodePipelineRole', {
-      assumedBy: new iam.ServicePrincipal('codepipeline.amazonaws.com'),
-    });
-
-    const codeCommitForCodePipelinePolicy = new Policy(this, 'CodecommitForCodepipelinePolicy', {
-      policyName: 'CodecommitForCodepipelinePolicy',
-      roles: [codePipelineRole],
-      statements: [
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: [
-            'codecommit:GetBranch',
-            'codecommit:GetCommit',
-            'codecommit:UploadArchive',
-            'codecommit:GetUploadArchiveStatus',
-            'codecommit:CancelUploadArchive'
-          ],
-          resources: [codeRepository.repositoryArn]
-        })
-      ]
-    });
-
-    const artifactsForPipelinePolicy = new Policy(this, 'ArtifactsForPipelinePolicy', {
-      policyName: 'ArtifactsForPipelinePolicy',
-      roles: [codePipelineRole],
-      statements: [
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: [
-            's3:PutObject',
-            's3:GetObject'
-          ],
-          resources: [pipelineArtifactsBucket.bucketArn]
-        })
-      ]
-    });
-
-    const codebuildForPipelinePolicy = new Policy(this, 'CodebuildForPipelinePolicy', {
-      policyName: 'CodebuildForPipelinePolicy',
-      roles: [codePipelineRole],
-      statements: [
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: [
-            'codebuild:BatchGetBuilds',
-            'codebuild:StartBuild'
-          ],
-          resources: [codeBuildProject.projectArn]
-        })
-      ]
-    });
-
-    /* Code Pipeline Object */
-    const codePipeline = new codepipeline.Pipeline(this, 'CodePipeline', {
-      pipelineName: `${this.ProjectName}-Assets-Pipeline`,
-      role: codePipelineRole,
-      artifactBucket: pipelineArtifactsBucket
-    });
-    const sourceOutput = new codepipeline.Artifact(`${this.ProjectName}-SourceArtifact`);
-    const sourceAction = new codepipelineactions.CodeCommitSourceAction({
-      actionName: 'CodeCommit',
-      repository: codeRepository,
-      output: sourceOutput,
-      branch: 'master'
-    });
-    codePipeline.addStage({
-      stageName: 'Source',
-      actions: [sourceAction],
-    });
-
-    const buildOutput = new codepipeline.Artifact(`${this.ProjectName}-BuildArtifact`);
-    const buildAction = new codepipelineactions.CodeBuildAction({
-      actionName: 'build-and-deploy',
-      project: codeBuildProject,
-      input: sourceOutput,
-      outputs: [buildOutput]
-    });
-    codePipeline.addStage({
-      stageName: 'Build',
-      actions: [buildAction]
-    });
-    //#endregion
+    /* End Insert */
 
     /* Api Gateway */
     //#region
@@ -514,8 +342,21 @@ export class MasterFullStackSingleStack extends cdk.Stack {
 
     //#endregion
 
+    /* S3 Website Deployment */
+    const s3WebsiteDeploy = new s3deploy.BucketDeployment(this, 'S3WebsiteDeploy', {
+      sources: [s3deploy.Source.asset('../assets/build')],
+      destinationBucket: assetsBucket
+    });
+
+    /* Outputs */
+    //#region 
+    new CfnOutput(this, 'WebsiteUrl', { value: assetsBucket.bucketWebsiteUrl });
+    //#endregion
+
   }
 }
+
+
 
 export function addCorsOptions(apiResource: IResource) {
   apiResource.addMethod('OPTIONS', new MockIntegration({
