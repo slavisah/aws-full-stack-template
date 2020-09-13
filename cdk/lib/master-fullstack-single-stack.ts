@@ -1,5 +1,5 @@
 import * as cdk from '@aws-cdk/core';
-import { RemovalPolicy, CfnOutput } from '@aws-cdk/core';
+import { RemovalPolicy, CfnOutput, CustomResource } from '@aws-cdk/core';
 import * as dynamodb from '@aws-cdk/aws-dynamodb';
 import s3 = require('@aws-cdk/aws-s3');
 import s3deploy = require('@aws-cdk/aws-s3-deployment');
@@ -7,14 +7,17 @@ import lambda = require('@aws-cdk/aws-lambda');
 import iam = require('@aws-cdk/aws-iam');
 import cognito = require('@aws-cdk/aws-cognito');
 import { UserPool, UserPoolClientIdentityProvider, CfnIdentityPool } from '@aws-cdk/aws-cognito';
-import { FederatedPrincipal, PolicyDocument, User, Policy } from '@aws-cdk/aws-iam';
-import { BlockPublicAccess, BucketPolicy } from '@aws-cdk/aws-s3';
+import { FederatedPrincipal, PolicyDocument, User, Policy, ManagedPolicy, PolicyStatement } from '@aws-cdk/aws-iam';
+import { BlockPublicAccess, BucketPolicy, BucketAccessControl } from '@aws-cdk/aws-s3';
 import codecommit = require('@aws-cdk/aws-codecommit');
 import codepipeline = require('@aws-cdk/aws-codepipeline');
 import codepipelineactions = require('@aws-cdk/aws-codepipeline-actions');
 import codebuild = require('@aws-cdk/aws-codebuild');
 import { RestApi, LambdaIntegration, IResource, MockIntegration, PassthroughBehavior, CfnAuthorizer, AuthorizationType } from '@aws-cdk/aws-apigateway';
-
+import { Artifact } from '@aws-cdk/aws-codepipeline';
+import { env } from 'process';
+import { countReset } from 'console';
+import { CloudFrontWebDistribution, OriginAccessIdentity, ViewerProtocolPolicy } from '@aws-cdk/aws-cloudfront'
 
 var path = require('path');
 
@@ -61,19 +64,68 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     /* S3 Objects */
     //Todo - grant access to cloudfront user and uncomment block all
     //#region
-    const assetsBucket = new s3.Bucket(this, 'AssetsBucket', {
-      bucketName: `aws-fullstack-template-assets-${getRandomInt(1000000)}`,
-      //blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+    /* Assets Source Bucket will be used as a codebuild source for the react code */
+    const sourceAssetBucket = new s3.Bucket(this, 'SourceAssetBucket', {
+      bucketName: `aws-fullstack-template-source-assets-${getRandomInt(1000000)}`,
+      blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
-      websiteIndexDocument: this.WebsiteIndexDocument,
-      websiteErrorDocument: this.WebsiteIndexDocument
+      versioned: true
     });
 
+    /* Website Bucket is the target bucket for the react application */
+    const websiteBucket = new s3.Bucket(this, 'WebsiteBucket', {
+      bucketName: `aws-fullstack-template-website-${getRandomInt(1000000)}`,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      websiteIndexDocument: this.WebsiteIndexDocument,
+      websiteErrorDocument: this.WebsiteIndexDocument,
+    });
+
+
+    /* Pipleine Artifacts Bucket is used by CodePipeline during Builds */
     const pipelineArtifactsBucket = new s3.Bucket(this, 'PipelineArtifactsBucket', {
-      bucketName: `aws-fullstack-template-artifacts-${getRandomInt(1000000)}`,
+      bucketName: `aws-fullstack-template-codepipeline-artifacts-${getRandomInt(1000000)}`,
       blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
       removalPolicy: cdk.RemovalPolicy.DESTROY
     });
+
+    /* S3 Website Deployment */
+    /* Seed the website bucket with the react source */
+    const s3WebsiteDeploy = new s3deploy.BucketDeployment(this, 'S3WebsiteDeploy', {
+      sources: [s3deploy.Source.asset('../assets/archive')],
+      destinationBucket: sourceAssetBucket
+    });
+
+    /* Set Website Bucket Allow Policy */
+    websiteBucket.addToResourcePolicy(
+      new iam.PolicyStatement({
+        resources: [
+          `${websiteBucket.bucketArn}/*`
+        ],
+        actions: ["s3:Get*"],
+        principals: [new iam.AnyPrincipal]
+      })
+    );
+    //#endregion
+
+    /* Cloudfront CDN Distribution */
+    //#region 
+
+    const assetsCdn = new CloudFrontWebDistribution(this, 'AssetsCDN', {
+      defaultRootObject: 'index.html',
+      comment: `CDN for ${websiteBucket}`,
+      originConfigs: [
+        {
+          s3OriginSource: {
+            s3BucketSource: websiteBucket,
+            originAccessIdentity: new OriginAccessIdentity(this, 'WebsiteBucketOriginAccessIdentity', {
+              comment: `OriginAccessIdentity for ${websiteBucket}`
+            }),
+          },
+          behaviors: [ { isDefaultBehavior: true } ]
+        }
+      ]
+    });
+
     //#endregion
 
     /* Lambda Objects */
@@ -205,7 +257,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       },
     });
 
-    /* User Pool Client */
+    // /* User Pool Client */
     const userPoolClient = new cognito.UserPoolClient(this, 'UserPoolClient', {
       userPoolClientName: `${this.ProjectName}-UserPoolClient`,
       generateSecret: false,
@@ -245,7 +297,6 @@ export class MasterFullStackSingleStack extends cdk.Stack {
         })
       ]
     })
-
     /* Authorized Role/Policy */
     const authorizedRole = new iam.Role(this, 'CognitoAuthorizedRole', {
       assumedBy: new iam.FederatedPrincipal(
@@ -284,10 +335,6 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       },
     });
     //#endregion
-
-    /* Insert Code Build Objects Here */
-
-    /* End Insert */
 
     /* Api Gateway */
     //#region
@@ -342,15 +389,123 @@ export class MasterFullStackSingleStack extends cdk.Stack {
 
     //#endregion
 
-    /* S3 Website Deployment */
-    const s3WebsiteDeploy = new s3deploy.BucketDeployment(this, 'S3WebsiteDeploy', {
-      sources: [s3deploy.Source.asset('../assets/build')],
-      destinationBucket: assetsBucket
+    /* CodeBuild/Pipeline Objects */
+    //#region 
+
+    /* CodeBuild Roles/Policies */
+    //#region 
+    const codeBuildRole = new iam.Role(this, 'CodeBuildRole', {
+      roleName: 'CodeBuildRole',
+      assumedBy: new iam.ServicePrincipal('codebuild.amazonaws.com'),
     });
+
+    codeBuildRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['s3:*'],
+      resources: [
+        sourceAssetBucket.bucketArn, 
+        pipelineArtifactsBucket.bucketArn, 
+        websiteBucket.bucketArn,
+        `${websiteBucket.bucketArn}/*`
+      ]
+    }));
+
+    codeBuildRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['logs:CreateLogStream', 'logs:PutLogEvents', 'logs:CreateLogGroup', 'cloudfront:CreateInvalidation'],
+      resources: ['*'],
+    }));
+
+    const codePipelineRole = new iam.Role(this, 'CodePipelineRole', {
+      roleName: 'CodePipelineRole',
+      assumedBy: new iam.ServicePrincipal('codepipeline.amazonaws.com')
+    });
+
+    codePipelineRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['s3:*'],
+      resources: [
+        sourceAssetBucket.bucketArn, 
+        pipelineArtifactsBucket.bucketArn, 
+        websiteBucket.bucketArn,
+        `${websiteBucket.bucketArn}/*`
+      ]
+    }));
+
+    //#endregion
+
+    /* CodeBuild Pipeline Project */
+    //#region 
+    const codeBuildProject = new codebuild.PipelineProject(this, 'CodeBuildProject', {
+      projectName: `${this.ProjectName}-build`,
+      description: `CodeBuild Project for ${this.ProjectName}.`,
+      environment: {
+        computeType: codebuild.ComputeType.SMALL,
+        buildImage: codebuild.LinuxBuildImage.STANDARD_3_0,
+        environmentVariables: {
+          API_GATEWAY_REGION: { value: cdk.Aws.REGION },
+          API_GATEWAY_URL: { value: appApi.url.slice(0, -1) },
+          COGNITO_REGION: { value: cdk.Aws.REGION },
+          COGNITO_USER_POOL_ID: { value: userPool.userPoolId },
+          COGNITO_APP_CLIENT_ID: { value: userPoolClient.userPoolClientId },
+          COGNITO_IDENTITY_POOL_ID: { value: identityPool.ref },
+          WEBSITE_BUCKET: { value: websiteBucket.bucketName }
+        }
+      },
+      role: codeBuildRole,
+      buildSpec: codebuild.BuildSpec.fromSourceFilename('buildspec.yml'),
+      timeout: cdk.Duration.minutes(5),
+    });
+    cdk.Tag.add(codeBuildProject, 'app-name', `${this.ProjectName}`);
+
+    codePipelineRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['codebuild:BatchGetBuilds', 'codebuild:StartBuild'],
+      resources: [codeBuildProject.projectArn],
+    }));
+
+    //#endregion
+
+    /* Code Pipeline Object */
+    //#region 
+    const sourceOutput = new codepipeline.Artifact(`${this.ProjectName}-SourceArtifact`);
+    const buildOutput = new codepipeline.Artifact(`${this.ProjectName}-BuildArtifact`);
+
+    const codePipeline = new codepipeline.Pipeline(this, 'AssetsCodePipeline', {
+      pipelineName: `${this.ProjectName}-Assets-Pipeline`,
+      role: codePipelineRole,
+      artifactBucket: pipelineArtifactsBucket,
+      stages: [
+        {
+          stageName: 'Source',
+          actions: [
+            new codepipelineactions.S3SourceAction({
+              actionName: 's3Source',
+              bucket: sourceAssetBucket,
+              bucketKey: 'assets.zip',
+              output: sourceOutput,
+              //trigger: codepipelineactions.S3Trigger.POLL
+            }),
+          ],
+        },
+        {
+          stageName: 'Build',
+          actions: [
+            new codepipelineactions.CodeBuildAction({
+              actionName: 'build-and-deploy',
+              project: codeBuildProject,
+              input: sourceOutput,
+              outputs: [buildOutput]
+            }),
+          ],
+        }
+      ],
+    });
+    //#endregion
 
     /* Outputs */
     //#region 
-    new CfnOutput(this, 'WebsiteUrl', { value: assetsBucket.bucketWebsiteUrl });
+    new CfnOutput(this, 'CloudFrontCDNUrl', { value: `http://${assetsCdn.distributionDomainName}` });
     //#endregion
 
   }

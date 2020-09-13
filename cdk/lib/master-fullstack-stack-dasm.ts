@@ -11,7 +11,6 @@ import s3 = require('@aws-cdk/aws-s3');
 import cloudfront = require('@aws-cdk/aws-cloudfront');
 import codebuild = require('@aws-cdk/aws-codebuild');
 import codepipeline = require('@aws-cdk/aws-codepipeline');
-/* [Scott] These repos are not in the npm repo.  Commented for now. */
 //import repositoryseeder = require('@aws-cdk/aws-repositoryseeder');
 //import customresource = require('@aws-cdk/aws-customresource');
 
@@ -1345,7 +1344,7 @@ export class MyStack extends Stack {
     new s3.CfnBucket(this, 'PipelineArtifactsBucket', {
       accessControl: "Private",
     });
-    
+
     new codebuild.CfnProject(this, 'CodeBuildProject', {
       artifacts: {
         "type": "CODEPIPELINE"
@@ -1555,267 +1554,265 @@ export class MyStack extends Stack {
     });
     //#endregion
 
-    /*[Scott]The code below is either based on the missing Seeder or 
-    included for cleanup purposes.  */
+    /* Seeder Role and Function  */
     //#region 
 
-    /*
-            new iam.CfnRole(this, 'SeederRole', {
-        assumeRolePolicyDocument: {
-          "statement": [
-            {
-              "action": [
-                "sts:AssumeRole"
-              ],
-              "effect": "Allow",
-              "principal": {
-                "service": [
-                  "lambda.amazonaws.com"
-                ]
-              }
-            }
-          ],
-          "version": "2012-10-17"
-        },
-        managedPolicyArns: [
-          "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-        ],
-        policies: [
+    new iam.CfnRole(this, 'SeederRole', {
+      assumeRolePolicyDocument: {
+        "statement": [
           {
-            "policyDocument": {
-              "statement": [
-                {
-                  "action": [
-                    "codecommit:GetRepository",
-                    "codecommit:GitPush",
-                    "codecommit:GetBranch",
-                    "codecommit:PutFile"
-                  ],
-                  "effect": "Allow",
-                  "resource": {
-                    "Fn::GetAtt": [
-                      "AssetsCodeRepository",
-                      "Arn"
-                    ]
-                  }
-                }
-              ],
-              "version": "2012-10-17"
-            },
-            "policyName": "SeederRolePolicy"
-          },
-          {
-            "policyDocument": {
-              "statement": [
-                {
-                  "action": [
-                    "logs:*"
-                  ],
-                  "effect": "Allow",
-                  "resource": "arn:aws:logs:*:*:*"
-                }
-              ],
-              "version": "2012-10-17"
-            },
-            "policyName": "LogsPolicy"
-          }
-        ],
-    });
-    new repositoryseeder.Cfnundefined(this, 'RepositorySeeder', {
-        serviceToken: {
-          "Fn::GetAtt": [
-            "SeederFunction",
-            "Arn"
-          ]
-        },
-        sourceUrl: {
-          "Fn::FindInMap": [
-            "Constants",
-            "AppKeys",
-            "SeedRepository"
-          ]
-        },
-        targetRepositoryName: {
-          "Fn::Sub": "${ProjectName}-WebAssets"
-        },
-        targetRepositoryRegion: "${AWS::Region}",
-    });
-    new customresource.Cfnundefined(this, 'RepositoryUpdater', {
-        serviceToken: {
-          "Fn::GetAtt": [
-            "UpdateConfigFunction",
-            "Arn"
-          ]
-        },
-        parameterOne: "Parameter to pass into Custom Lambda Function",
-        dependsOn: "UpdateConfigFunction",
-    });
-    
-    new iam.CfnRole(this, 'BucketCleanupRole', {
-        assumeRolePolicyDocument: {
-          "version": "2012-10-17",
-          "statement": [
-            {
-              "effect": "Allow",
-              "principal": {
-                "service": [
-                  "lambda.amazonaws.com"
-                ]
-              },
-              "action": [
-                "sts:AssumeRole"
+            "action": [
+              "sts:AssumeRole"
+            ],
+            "effect": "Allow",
+            "principal": {
+              "service": [
+                "lambda.amazonaws.com"
               ]
             }
-          ]
-        },
-        managedPolicyArns: [
-          "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+          }
         ],
-        policies: [
-          {
-            "policyName": "BucketCleanupPolicy",
-            "policyDocument": {
-              "statement": [
-                {
-                  "action": [
-                    "s3:List*",
-                    "s3:DeleteObject"
-                  ],
-                  "effect": "Allow",
-                  "resource": [
-                    {
-                      "Fn::GetAtt": [
-                        "AssetsBucket",
-                        "Arn"
-                      ]
-                    },
-                    {
-                      "Fn::GetAtt": [
-                        "PipelineArtifactsBucket",
-                        "Arn"
-                      ]
-                    },
-                    {
-                      "Fn::Join": [
-                        "",
-                        [
-                          {
-                            "Fn::GetAtt": [
-                              "AssetsBucket",
-                              "Arn"
-                            ]
-                          },
-                          "/*"
-                        ]
-                      ]
-                    },
-                    {
-                      "Fn::Join": [
-                        "",
-                        [
-                          {
-                            "Fn::GetAtt": [
-                              "PipelineArtifactsBucket",
-                              "Arn"
-                            ]
-                          },
-                          "/*"
-                        ]
-                      ]
-                    }
+        "version": "2012-10-17"
+      },
+      managedPolicyArns: [
+        "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      ],
+      policies: [
+        {
+          "policyDocument": {
+            "statement": [
+              {
+                "action": [
+                  "codecommit:GetRepository",
+                  "codecommit:GitPush",
+                  "codecommit:GetBranch",
+                  "codecommit:PutFile"
+                ],
+                "effect": "Allow",
+                "resource": {
+                  "Fn::GetAtt": [
+                    "AssetsCodeRepository",
+                    "Arn"
                   ]
                 }
-              ],
-              "version": "2012-10-17"
-            }
-          }
-        ],
-    });
-    
-    new lambda.CfnLayerVersion(this, 'PythonLambdaLayer', {
-        compatibleRuntimes: [
-          "python3.7",
-          "python3.6"
-        ],
-        content: {
-          "s3Bucket": {
-            "Fn::FindInMap": [
-              "S3Buckets",
-              {
-                "Ref": "AWS::Region"
-              },
-              "Bucket"
-            ]
+              }
+            ],
+            "version": "2012-10-17"
           },
-          "s3Key": {
-            "Fn::FindInMap": [
-              "Constants",
-              "S3Keys",
-              "PythonLambdaLayer"
+          "policyName": "SeederRolePolicy"
+        },
+        {
+          "policyDocument": {
+            "statement": [
+              {
+                "action": [
+                  "logs:*"
+                ],
+                "effect": "Allow",
+                "resource": "arn:aws:logs:*:*:*"
+              }
+            ],
+            "version": "2012-10-17"
+          },
+          "policyName": "LogsPolicy"
+        }
+      ],
+    });
+    new repositoryseeder.Cfnundefined(this, 'RepositorySeeder', {
+      serviceToken: {
+        "Fn::GetAtt": [
+          "SeederFunction",
+          "Arn"
+        ]
+      },
+      sourceUrl: {
+        "Fn::FindInMap": [
+          "Constants",
+          "AppKeys",
+          "SeedRepository"
+        ]
+      },
+      targetRepositoryName: {
+        "Fn::Sub": "${ProjectName}-WebAssets"
+      },
+      targetRepositoryRegion: "${AWS::Region}",
+    });
+    new customresource.Cfnundefined(this, 'RepositoryUpdater', {
+      serviceToken: {
+        "Fn::GetAtt": [
+          "UpdateConfigFunction",
+          "Arn"
+        ]
+      },
+      parameterOne: "Parameter to pass into Custom Lambda Function",
+      dependsOn: "UpdateConfigFunction",
+    });
+
+    new iam.CfnRole(this, 'BucketCleanupRole', {
+      assumeRolePolicyDocument: {
+        "version": "2012-10-17",
+        "statement": [
+          {
+            "effect": "Allow",
+            "principal": {
+              "service": [
+                "lambda.amazonaws.com"
+              ]
+            },
+            "action": [
+              "sts:AssumeRole"
             ]
           }
+        ]
+      },
+      managedPolicyArns: [
+        "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      ],
+      policies: [
+        {
+          "policyName": "BucketCleanupPolicy",
+          "policyDocument": {
+            "statement": [
+              {
+                "action": [
+                  "s3:List*",
+                  "s3:DeleteObject"
+                ],
+                "effect": "Allow",
+                "resource": [
+                  {
+                    "Fn::GetAtt": [
+                      "AssetsBucket",
+                      "Arn"
+                    ]
+                  },
+                  {
+                    "Fn::GetAtt": [
+                      "PipelineArtifactsBucket",
+                      "Arn"
+                    ]
+                  },
+                  {
+                    "Fn::Join": [
+                      "",
+                      [
+                        {
+                          "Fn::GetAtt": [
+                            "AssetsBucket",
+                            "Arn"
+                          ]
+                        },
+                        "/*"
+                      ]
+                    ]
+                  },
+                  {
+                    "Fn::Join": [
+                      "",
+                      [
+                        {
+                          "Fn::GetAtt": [
+                            "PipelineArtifactsBucket",
+                            "Arn"
+                          ]
+                        },
+                        "/*"
+                      ]
+                    ]
+                  }
+                ]
+              }
+            ],
+            "version": "2012-10-17"
+          }
+        }
+      ],
+    });
+
+    new lambda.CfnLayerVersion(this, 'PythonLambdaLayer', {
+      compatibleRuntimes: [
+        "python3.7",
+        "python3.6"
+      ],
+      content: {
+        "s3Bucket": {
+          "Fn::FindInMap": [
+            "S3Buckets",
+            {
+              "Ref": "AWS::Region"
+            },
+            "Bucket"
+          ]
         },
+        "s3Key": {
+          "Fn::FindInMap": [
+            "Constants",
+            "S3Keys",
+            "PythonLambdaLayer"
+          ]
+        }
+      },
     });
     new lambda.CfnFunction(this, 'BucketCleanupFunction', {
-        functionName: {
-          "Fn::Sub": "${ProjectName}-BucketCleanup"
-        },
-        description: "Cleanup S3 buckets when deleting stack",
-        handler: "index.handler",
-        memorySize: 256,
-        role: {
-          "Fn::GetAtt": [
-            "BucketCleanupRole",
-            "Arn"
+      functionName: {
+        "Fn::Sub": "${ProjectName}-BucketCleanup"
+      },
+      description: "Cleanup S3 buckets when deleting stack",
+      handler: "index.handler",
+      memorySize: 256,
+      role: {
+        "Fn::GetAtt": [
+          "BucketCleanupRole",
+          "Arn"
+        ]
+      },
+      runtime: "python3.7",
+      timeout: 30,
+      layers: [
+        {
+          "Ref": "PythonLambdaLayer"
+        }
+      ],
+      code: {
+        "s3Bucket": {
+          "Fn::FindInMap": [
+            "S3Buckets",
+            {
+              "Ref": "AWS::Region"
+            },
+            "Bucket"
           ]
         },
-        runtime: "python3.7",
-        timeout: 30,
-        layers: [
-          {
-            "Ref": "PythonLambdaLayer"
-          }
-        ],
-        code: {
-          "s3Bucket": {
-            "Fn::FindInMap": [
-              "S3Buckets",
-              {
-                "Ref": "AWS::Region"
-              },
-              "Bucket"
-            ]
-          },
-          "s3Key": {
-            "Fn::FindInMap": [
-              "Constants",
-              "S3Keys",
-              "DeleteBucketsCode"
-            ]
-          }
-        },
+        "s3Key": {
+          "Fn::FindInMap": [
+            "Constants",
+            "S3Keys",
+            "DeleteBucketsCode"
+          ]
+        }
+      },
     });
     new customresource.Cfnundefined(this, 'DeleteBucketsObjects', {
-        serviceToken: {
-          "Fn::GetAtt": [
-            "BucketCleanupFunction",
-            "Arn"
-          ]
-        },
-        bucketNames: [
-          {
-            "Ref": "AssetsBucket"
-          },
-          {
-            "Ref": "PipelineArtifactsBucket"
-          }
-        ],
-        dependsOn: [
+      serviceToken: {
+        "Fn::GetAtt": [
           "BucketCleanupFunction",
-          "BucketCleanupRole"
-        ],
+          "Arn"
+        ]
+      },
+      bucketNames: [
+        {
+          "Ref": "AssetsBucket"
+        },
+        {
+          "Ref": "PipelineArtifactsBucket"
+        }
+      ],
+      dependsOn: [
+        "BucketCleanupFunction",
+        "BucketCleanupRole"
+      ],
     });
-    */
+
     //#endregion
   }
 }
