@@ -27,10 +27,9 @@ const props = {
 };
 
 
-//const DatabaseAppStack = new DatabaseStack(app, 'DatabaseAppStack', props);
-
+const DatabaseAppStack = new DatabaseStack(app, 'DatabaseAppStack', props);
 const S3AppStack = new S3Stack(app, 'S3AppStack', props);
-const CdnAppStack = new CdnStack(app, 'CdnAppStack', { ...props, CdnWebsiteBucket: S3AppStack.websiteBucket } );
+const CdnAppStack = new CdnStack(app, 'CdnAppStack', S3AppStack.websiteBucket,  props);
 
 // const ApiGatewayAppStack = new ApiGatewayStack(app, 'ApiGatewayAppStack', props);
 // const CodeAppStack = new CodeStack(app, 'CodeAppStack', props);
