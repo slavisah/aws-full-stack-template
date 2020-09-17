@@ -117,9 +117,9 @@ export class MasterFullStackSingleStack extends cdk.Stack {
         {
           s3OriginSource: {
             s3BucketSource: websiteBucket,
-            // originAccessIdentity: new OriginAccessIdentity(this, 'WebsiteBucketOriginAccessIdentity', {
-            //   comment: `OriginAccessIdentity for ${websiteBucket}`
-            // }),
+            originAccessIdentity: new OriginAccessIdentity(this, 'WebsiteBucketOriginAccessIdentity', {
+              comment: `OriginAccessIdentity for ${websiteBucket}`
+            }),
           },
           behaviors: [ { isDefaultBehavior: true } ]
         }
@@ -142,19 +142,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
       code: lambda.Code.fromAsset(path.dirname('../functions/ListGoals.js')),
     });
 
-    const functionListAllGoals = new lambda.Function(this, 'FunctionListAllGoals', {
-      functionName: `${this.ProjectName}-ListAllGoals`,
-      runtime: lambda.Runtime.NODEJS_12_X,
-      description: 'Get list of goals for everyone',
-      handler: 'ListAllGoals.handler',
-      memorySize: 256,
-      timeout: cdk.Duration.seconds(120),
-      role: dynamoDbRole,
-      environment: { TABLE_NAME: goalsTable.tableName },
-      code: lambda.Code.fromAsset(path.dirname('../functions/ListAllGoals.js')),
-    });
-
-    const functionCreateGoal = new lambda.Function(this, 'FunctionCreateGoal', {
+        const functionCreateGoal = new lambda.Function(this, 'FunctionCreateGoal', {
       functionName: `${this.ProjectName}-CreateGoal`,
       runtime: lambda.Runtime.NODEJS_12_X,
       description: 'Create goal for user id',
@@ -203,7 +191,6 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     });
 
     goalsTable.grantReadWriteData(functionListGoals);
-    goalsTable.grantReadWriteData(functionListAllGoals);
     goalsTable.grantReadWriteData(functionCreateGoal);
     goalsTable.grantReadWriteData(functionDeleteGoal);
     goalsTable.grantReadWriteData(functionUpdateGoal);
@@ -354,7 +341,7 @@ export class MasterFullStackSingleStack extends cdk.Stack {
     appApi.root.addMethod('ANY');
 
     const items = appApi.root.addResource('goals');
-    const getAllIntegration = new LambdaIntegration(functionListAllGoals);
+    const getAllIntegration = new LambdaIntegration(functionListGoals);
     items.addMethod('GET', getAllIntegration, {
       authorizationType: AuthorizationType.IAM,
       authorizer: { authorizerId: authorizer.ref }
