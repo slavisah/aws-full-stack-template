@@ -109,7 +109,6 @@ export class MasterFullStackSingleStack extends cdk.Stack {
 
     /* Cloudfront CDN Distribution */
     //#region 
-
     const assetsCdn = new CloudFrontWebDistribution(this, 'AssetsCDN', {
       defaultRootObject: 'index.html',
       comment: `CDN for ${websiteBucket}`,

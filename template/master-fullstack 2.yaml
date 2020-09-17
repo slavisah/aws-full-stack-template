@@ -1,0 +1,165 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  ProjectName:
+    Description: Used as a prefix for project resources.  Can be up to 12 characters, lowercase letters (a-z) only.
+    Type: String
+    Default: goalsapp
+    AllowedPattern: "^[a-z]{1,12}"
+    ConstraintDescription: The ProjectName can be up to 12 characters, lowercase letters (a-z) only.
+Conditions:
+  IADRegion: !Equals [!Ref "AWS::Region", "us-east-1"]
+Mappings:
+  S3Buckets:
+    us-east-1:
+      Bucket: aws-fullstack-template
+      SeederFunctionBucket: fsd-aws-wildrydes-us-east-1
+    us-west-2:
+      Bucket: aws-fullstack-template-us-west-2
+      SeederFunctionBucket: fsd-aws-wildrydes-us-west-2
+    eu-central-1:
+      Bucket: aws-fullstack-template-eu-central-1
+      SeederFunctionBucket: fsd-aws-wildrydes-eu-central-1
+    eu-west-1:
+      Bucket: aws-fullstack-template-eu-west-1
+      SeederFunctionBucket: fsd-aws-wildrydes-eu-west-1
+  Constants:
+    AppKeys:
+      SeedRepository: https://s3.amazonaws.com/aws-fullstack-template/goals-webapp.zip
+    S3Keys:
+      ListGoalsCode: functions/ListGoals.zip
+      CreateGoalCode: functions/CreateGoal.zip
+      DeleteGoalCode: functions/DeleteGoal.zip
+      UpdateGoalCode: functions/UpdateGoal.zip
+      GetGoalCode: functions/GetGoal.zip
+      UpdateConfigCode: functions/UpdateConfig.zip
+      SeederFunctionCode: aws-serverless-codecommit-seeder.zip
+      PythonLambdaLayer: functions/PythonLambdaLayer.zip
+      DeleteBucketsCode: functions/DeleteBuckets.zip
+
+Resources:
+  SeederFunction:
+    Properties:
+      Code:
+        S3Bucket: !FindInMap 
+          - S3Buckets
+          - !Ref 'AWS::Region'
+          - SeederFunctionBucket
+        S3Key: !FindInMap 
+         - Constants
+         - S3Keys
+         - SeederFunctionCode
+      Description: CodeCommit repository seeder
+      Handler: seeder.SeedRepositoryHandler
+      MemorySize: 3008
+      Role:
+        'Fn::GetAtt':
+          - SeederRole
+          - Arn
+      Runtime: java8
+      Timeout: 900
+    Type: 'AWS::Lambda::Function'
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 6b5081a3-db00-41db-a607-c9d5f98cf394
+    DependsOn:
+      - AssetsCodeRepository
+  UpdateConfigFunction:
+    Properties:
+      Code:
+        S3Bucket: !FindInMap 
+          - S3Buckets
+          - !Ref 'AWS::Region'
+          - Bucket
+        S3Key: !FindInMap 
+          - Constants
+          - S3Keys
+          - UpdateConfigCode
+      Description: Update config for CodeCommit repository
+      Handler: index.handler
+      Role:
+        'Fn::GetAtt':
+          - SeederRole
+          - Arn
+      Runtime: nodejs12.x
+      Timeout: 300
+      Environment:
+        Variables:
+          API_URL: !Sub 'https://${AppApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+          BRANCH_NAME: master
+          REGION: !Ref 'AWS::Region'
+          REPOSITORY_NAME: !Sub '${ProjectName}-WebAssets'
+          USER_POOL_ID: !Ref UserPool
+          APP_CLIENT_ID: !Ref UserPoolClient
+          IDENTITY_POOL_ID: !Ref IdentityPool
+    Type: 'AWS::Lambda::Function'
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 00cdcc4b-3885-4a51-bdad-776ac697419c
+    DependsOn:
+      - AssetsCodeRepository
+      - SeederFunction
+      - RepositorySeeder
+      - AppApi
+      - UserPool
+      - UserPoolClient
+      - IdentityPool
+  SeederRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - 'codecommit:GetRepository'
+                  - 'codecommit:GitPush'
+                  - 'codecommit:GetBranch'
+                  - 'codecommit:PutFile'
+                Effect: Allow
+                Resource: !GetAtt AssetsCodeRepository.Arn
+            Version: 2012-10-17
+          PolicyName: SeederRolePolicy
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - 'logs:*'
+                Effect: Allow
+                Resource: 'arn:aws:logs:*:*:*'
+            Version: 2012-10-17
+          PolicyName: LogsPolicy
+    Type: 'AWS::IAM::Role'
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: a10d77af-fa97-40ee-a6f0-5d9988792aeb
+  RepositorySeeder:
+    Properties:
+      ServiceToken:
+        'Fn::GetAtt':
+          - SeederFunction
+          - Arn
+      sourceUrl: !FindInMap [Constants, AppKeys, SeedRepository]
+      targetRepositoryName: !Sub '${ProjectName}-WebAssets'
+      targetRepositoryRegion: '${AWS::Region}'
+    Type: 'Custom::RepositorySeeder'
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 688ea29a-9fa9-40c9-b5a8-85e863cc8a4c
+  RepositoryUpdater:
+    Type: 'Custom::CustomResource'
+    Properties:
+      ServiceToken: !GetAtt UpdateConfigFunction.Arn
+      ParameterOne: Parameter to pass into Custom Lambda Function
+      DependsOn: UpdateConfigFunction
+    Metadata:
+      'AWS::CloudFormation::Designer':
+        id: 63b08124-fccb-4874-ab13-ce6cfe6ce885
+
