@@ -30,9 +30,8 @@ const props = {
 const DatabaseAppStack = new DatabaseStack(app, 'DatabaseAppStack', props);
 const S3AppStack = new S3Stack(app, 'S3AppStack', props);
 const CdnAppStack = new CdnStack(app, 'CdnAppStack', S3AppStack.websiteBucket,  props);
-
-// const ApiGatewayAppStack = new ApiGatewayStack(app, 'ApiGatewayAppStack', props);
-// const CodeAppStack = new CodeStack(app, 'CodeAppStack', props);
-// const CognitoAppStack = new CognitoStack(app, 'CognitoAppStack', props);
-// const LambdaAppStack = new LambdaStack(app, 'LambdaAppStack', props);
+const LambdaAppStack = new LambdaStack(app, 'LambdaAppStack', DatabaseAppStack.goalsTable, DatabaseAppStack.dynamoDbRole, props);
+const CognitoAppStack = new CognitoStack(app, 'CognitoAppStack', props);
+const ApiGatewayAppStack = new ApiGatewayStack(app, 'ApiGatewayAppStack', LambdaAppStack, CognitoAppStack, props);
+const CodeAppStack = new CodeStack(app, 'CodeAppStack', CognitoAppStack, S3AppStack, ApiGatewayAppStack, props);
 

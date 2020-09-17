@@ -31,7 +31,8 @@ export class CdnStack extends Stack {
             ]
         });
 
-       
+        new cdk.CfnOutput(this, 'CloudFrontCDNUrl', { value: `http://${assetsCdn.distributionDomainName}` });
+      
         //#endregion
 
 
