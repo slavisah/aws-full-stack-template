@@ -16,7 +16,6 @@ export interface LambdaStackProps extends cdk.StackProps {
 export class LambdaStack extends Stack {
 
   public readonly functionListGoals: lambda.Function;
-  public readonly functionListAllGoals: lambda.Function;
   public readonly functionCreateGoal: lambda.Function;
   public readonly functionDeleteGoal: lambda.Function;
   public readonly functionUpdateGoal: lambda.Function;
@@ -37,18 +36,6 @@ export class LambdaStack extends Stack {
       role: dynamoDbRole,
       environment: { TABLE_NAME: goalsTable.tableName },
       code: lambda.Code.fromAsset(path.dirname('../functions/ListGoals.js')),
-    });
-
-    this.functionListAllGoals = new lambda.Function(this, 'FunctionListAllGoals', {
-      functionName: `${props.projectName}-ListAllGoals`,
-      runtime: lambda.Runtime.NODEJS_12_X,
-      description: 'Get list of goals for everyone',
-      handler: 'ListAllGoals.handler',
-      memorySize: 256,
-      timeout: cdk.Duration.seconds(120),
-      role: dynamoDbRole,
-      environment: { TABLE_NAME: goalsTable.tableName },
-      code: lambda.Code.fromAsset(path.dirname('../functions/ListAllGoals.js')),
     });
 
     this.functionCreateGoal = new lambda.Function(this, 'FunctionCreateGoal', {
@@ -100,7 +87,6 @@ export class LambdaStack extends Stack {
     });
 
     goalsTable.grantReadWriteData(this.functionListGoals);
-    goalsTable.grantReadWriteData(this.functionListAllGoals);
     goalsTable.grantReadWriteData(this.functionCreateGoal);
     goalsTable.grantReadWriteData(this.functionDeleteGoal);
     goalsTable.grantReadWriteData(this.functionUpdateGoal);

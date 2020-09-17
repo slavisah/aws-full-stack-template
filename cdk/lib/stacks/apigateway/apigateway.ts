@@ -36,7 +36,7 @@ export class ApiGatewayStack extends Stack {
       this.appApi.root.addMethod('ANY');
   
       const items = this.appApi.root.addResource('goals');
-      const getAllIntegration = new LambdaIntegration(lambdaAppStack.functionListAllGoals);
+      const getAllIntegration = new LambdaIntegration(lambdaAppStack.functionListGoals);
       items.addMethod('GET', getAllIntegration, {
         authorizationType: AuthorizationType.IAM,
         authorizer: { authorizerId: authorizer.ref }

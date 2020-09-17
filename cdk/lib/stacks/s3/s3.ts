@@ -61,6 +61,8 @@ export class S3Stack extends Stack {
                 principals: [new iam.AnyPrincipal]
             })
         );
+
+        new cdk.CfnOutput(this, 'NonCdnWebsiteUrl', { value: this.websiteBucket.bucketWebsiteUrl });
         //#endregion
     }
 }

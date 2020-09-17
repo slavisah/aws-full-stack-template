@@ -18,6 +18,7 @@ const commonProps = {
 
 const props = {
     environment: 'dev',
+    useCdn: true,
     projectName: 'MyCDKGoals',
     tableName: 'CDKGoals',
     WebsiteIndexDocument: 'index.html',
@@ -29,7 +30,9 @@ const props = {
 
 const DatabaseAppStack = new DatabaseStack(app, 'DatabaseAppStack', props);
 const S3AppStack = new S3Stack(app, 'S3AppStack', props);
-const CdnAppStack = new CdnStack(app, 'CdnAppStack', S3AppStack.websiteBucket,  props);
+if(props.useCdn){
+    const CdnAppStack = new CdnStack(app, 'CdnAppStack', S3AppStack.websiteBucket,  props);
+}
 const LambdaAppStack = new LambdaStack(app, 'LambdaAppStack', DatabaseAppStack.goalsTable, DatabaseAppStack.dynamoDbRole, props);
 const CognitoAppStack = new CognitoStack(app, 'CognitoAppStack', props);
 const ApiGatewayAppStack = new ApiGatewayStack(app, 'ApiGatewayAppStack', LambdaAppStack, CognitoAppStack, props);
