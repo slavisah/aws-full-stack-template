@@ -117,9 +117,9 @@ export class MasterFullStackSingleStack extends cdk.Stack {
         {
           s3OriginSource: {
             s3BucketSource: websiteBucket,
-            originAccessIdentity: new OriginAccessIdentity(this, 'WebsiteBucketOriginAccessIdentity', {
-              comment: `OriginAccessIdentity for ${websiteBucket}`
-            }),
+            // originAccessIdentity: new OriginAccessIdentity(this, 'WebsiteBucketOriginAccessIdentity', {
+            //   comment: `OriginAccessIdentity for ${websiteBucket}`
+            // }),
           },
           behaviors: [ { isDefaultBehavior: true } ]
         }
